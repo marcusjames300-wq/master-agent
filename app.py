@@ -271,7 +271,7 @@ with st.spinner("Master Agent analysing all assets..."):
 
     try:
         ai_response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.5-flash-lite',
             contents=master_prompt
         )
         master_analysis = ai_response.text
