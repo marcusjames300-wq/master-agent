@@ -42,6 +42,8 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 GMAIL_ADDRESS = st.secrets["GMAIL_ADDRESS"]
 GMAIL_APP_PASSWORD = st.secrets["GMAIL_APP_PASSWORD"]
 ALERT_EMAIL = st.secrets["ALERT_EMAIL"]
+TELEGRAM_BOT_TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHAT_ID = st.secrets["TELEGRAM_CHAT_ID"]
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 credentials = f"{T212_API_KEY}:{T212_API_SECRET}"
@@ -54,7 +56,20 @@ def safe_change(current, open_price):
         return ((current - open_price) / open_price) * 100
     return 0.0
 
-def send_morning_briefing(briefing_text, signals, gmail_address, gmail_password, alert_emails):
+def send_telegram(message, bot_token, chat_id):
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        response = requests.post(url, json=payload)
+        return response.status_code == 200
+    except Exception:
+        return False
+
+def send_morning_briefing_email(briefing_text, signals, gmail_address, gmail_password, alert_emails):
     try:
         recipients = [email.strip() for email in alert_emails.split(',')]
         msg = MIMEMultipart('alternative')
@@ -219,10 +234,11 @@ st.divider()
 st.subheader("🧠 Master AI Analysis")
 st.caption("Synthesising signals from all specialist agents")
 
+master_analysis = ""
+
 with st.spinner("Master Agent analysing all assets..."):
     master_prompt = (
         "You are a Master Trading Agent overseeing a portfolio of specialist agents. "
-        "Each agent monitors a different asset class. "
         "You are supporting a retail investor who prefers buying dips and selling when in profit. "
         "The investor trades UK stocks and Gold on Trading 212 ISA. "
         "Here is the current data from all specialist agents:\n\n"
@@ -261,19 +277,54 @@ with st.spinner("Master Agent analysing all assets..."):
         master_analysis = ai_response.text
         st.info(master_analysis)
 
-        if is_weekday and market_open <= current_time <= market_close:
-            if st.button("📧 Send Morning Briefing Email"):
-                sent = send_morning_briefing(
-                    master_analysis, signals_text,
-                    GMAIL_ADDRESS, GMAIL_APP_PASSWORD, ALERT_EMAIL
-                )
-                if sent:
-                    st.success("✅ Morning briefing sent to your email!")
-                else:
-                    st.warning("❌ Could not send email — check your credentials")
-
     except Exception:
         st.warning("⏳ AI analysis temporarily unavailable — will resume shortly")
+
+st.divider()
+
+st.subheader("📬 Send Briefing")
+st.caption("Send the current master analysis to your devices")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("📧 Send Email Briefing"):
+        if master_analysis:
+            sent = send_morning_briefing_email(
+                master_analysis, signals_text,
+                GMAIL_ADDRESS, GMAIL_APP_PASSWORD, ALERT_EMAIL
+            )
+            if sent:
+                st.success("✅ Email briefing sent!")
+            else:
+                st.warning("❌ Could not send email")
+        else:
+            st.warning("⏳ Wait for AI analysis to complete first")
+
+with col2:
+    if st.button("📱 Send Telegram Briefing"):
+        if master_analysis:
+            telegram_msg = (
+                f"🧠 <b>Master Trading Agent</b>\n"
+                f"📅 {uk_now.strftime('%d/%m/%Y %H:%M')} (UK Time)\n\n"
+                f"📊 <b>Market Snapshot:</b>\n"
+            )
+            for d in asset_data:
+                change_icon = "📈" if d['change'] > 0 else "📉"
+                telegram_msg += (
+                    f"{change_icon} {d['name']}: "
+                    f"{d['currency']}{d['price']:.2f} ({d['change']:+.2f}%)\n"
+                )
+            telegram_msg += f"\n🧠 <b>Master Analysis:</b>\n{master_analysis}"
+            telegram_msg += "\n\n⚠️ Not financial advice."
+
+            sent = send_telegram(telegram_msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+            if sent:
+                st.success("✅ Telegram briefing sent! Check your phone 📱")
+            else:
+                st.warning("❌ Could not send Telegram message")
+        else:
+            st.warning("⏳ Wait for AI analysis to complete first")
 
 st.divider()
 
